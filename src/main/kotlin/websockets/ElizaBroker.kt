@@ -23,7 +23,7 @@ object ElizaBroker {
         try {
             Scanner(System.`in`).use { s ->
                 server.start()
-                LOGGER.info("Press 's' to shutdown now the broker...")
+                LOGGER.info("Press 's' to shutdown the broker...")
                 while (!s.hasNext("s"));
             }
         } catch (e: Exception) {

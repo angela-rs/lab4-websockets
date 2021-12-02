@@ -14,7 +14,7 @@ import java.util.logging.Logger
 import javax.websocket.*
 import javax.websocket.CloseReason.CloseCodes
 
-object ElizaServer {
+/*object ElizaServer {
     private val LOGGER: Logger = Grizzly.logger(ElizaServer::class.java)
     private val LATCH = CountDownLatch(1)
 
@@ -38,7 +38,7 @@ object ElizaServer {
             LOGGER.log(Level.SEVERE, e.toString(), e)
         }
     }
-}
+}*/
 
 @ClientEndpoint
 @Component
