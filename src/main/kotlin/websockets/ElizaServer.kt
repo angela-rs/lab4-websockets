@@ -1,36 +1,48 @@
 package websockets
 
+import org.glassfish.grizzly.Grizzly
+import org.glassfish.tyrus.client.ClientManager
 import org.slf4j.LoggerFactory
-import org.springframework.boot.autoconfigure.SpringBootApplication
-import org.springframework.boot.runApplication
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
 import org.springframework.stereotype.Component
-import org.springframework.web.socket.config.annotation.EnableWebSocket
-import org.springframework.web.socket.server.standard.ServerEndpointExporter
+import java.io.IOException
+import java.net.URI
+import java.net.URISyntaxException
 import java.util.*
+import java.util.concurrent.CountDownLatch
+import java.util.logging.Level
+import java.util.logging.Logger
 import javax.websocket.*
 import javax.websocket.CloseReason.CloseCodes
-import javax.websocket.server.ServerEndpoint
 
+object ElizaServer {
+    private val LOGGER: Logger = Grizzly.logger(ElizaServer::class.java)
+    private val LATCH = CountDownLatch(1)
 
-@SpringBootApplication
-class Application
+    @JvmStatic
+    fun main(args: Array<String>) {
+        runClient()
+    }
 
-fun main(args: Array<String>) {
-    runApplication<Application>(*args)
+    private fun runClient() {
+        val client = ClientManager.createClient()
+        try {
+            client.connectToServer(ElizaServerEndpoint::class.java, URI("ws://localhost:8080/websockets/broker/doctor"))
+            LATCH.await()
+        } catch (e: DeploymentException) {
+            LOGGER.log(Level.SEVERE, e.toString(), e)
+        } catch (e: IOException) {
+            LOGGER.log(Level.SEVERE, e.toString(), e)
+        } catch (e: URISyntaxException) {
+            LOGGER.log(Level.SEVERE, e.toString(), e)
+        } catch (e: InterruptedException) {
+            LOGGER.log(Level.SEVERE, e.toString(), e)
+        }
+    }
 }
 
-@Configuration
-@EnableWebSocket
-class WebSocketConfig {
-    @Bean
-    fun serverEndpoint() = ServerEndpointExporter()
-}
-
-@ServerEndpoint("/eliza")
+@ClientEndpoint
 @Component
-class ElizaEndpoint {
+class ElizaServerEndpoint {
 
     private val eliza = Eliza()
 
@@ -42,13 +54,6 @@ class ElizaEndpoint {
     @OnOpen
     fun onOpen(session: Session) {
         LOGGER.info("Server Connected ... Session ${session.id}")
-        synchronized(session) {
-            with(session.basicRemote) {
-                sendText("The doctor is in.")
-                sendText("What's on your mind?")
-                sendText("---")
-            }
-        }
     }
 
     /**
@@ -68,18 +73,33 @@ class ElizaEndpoint {
      */
     @OnMessage
     fun onMsg(message: String, session:Session) {
-        LOGGER.info("Server Message ... Session ${session.id}")
-        val currentLine = Scanner(message.lowercase(Locale.getDefault()))
-        if (currentLine.findInLine("bye") == null) {
-            LOGGER.info("Server received \"$message\"")
-            synchronized(session) {
-                with(session.basicRemote) {
-                    sendText(eliza.respond(currentLine))
-                    sendText("---")
+        LOGGER.info("[DOCTOR] Message ... $message")
+        val client = message.split(";")[0]
+        if (client != "/websockets/broker/doctor") {
+            if (message.contains("INIT DOCTOR")) {
+                LOGGER.info("[DOCTOR] Message from broker: Doctor sends to the broker the doctor's initial messages)")
+                synchronized(session) {
+                    with(session.basicRemote) {
+                        sendText("$client;The doctor is in.")
+                        sendText("$client;What's on your mind?")
+                        sendText("$client;---")
+                    }
+                }
+            } else {
+                val currentLine = Scanner(message.lowercase(Locale.getDefault()))
+                if (currentLine.findInLine("bye") == null) {
+                    LOGGER.info("[DOCTOR] Message from broker: Doctor sends to the broker eliza's response)")
+                    LOGGER.info("Server received \"$message\"")
+                    synchronized(session) {
+                        with(session.basicRemote) {
+                            sendText(client + ";" +eliza.respond(currentLine))
+                            sendText("$client;---")
+                        }
+                    }
+                } else {
+                    session.close(CloseReason(CloseCodes.NORMAL_CLOSURE, "Alright then, goodbye!"))
                 }
             }
-        } else {
-            session.close(CloseReason(CloseCodes.NORMAL_CLOSURE, "Alright then, goodbye!"))
         }
     }
 
@@ -89,6 +109,6 @@ class ElizaEndpoint {
     }
 
     companion object {
-        private val LOGGER = LoggerFactory.getLogger(ElizaEndpoint::class.java)
+        private val LOGGER = LoggerFactory.getLogger(ElizaServerEndpoint::class.java)
     }
 }
